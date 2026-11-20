@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock, ShoppingCart, Tag, UtensilsCrossed, X } from 'lucide-react';
 import type {
   CartItem,
@@ -20,12 +20,35 @@ import { OrderTrackerView } from './components/OrderTrackerView.tsx';
 import { SummerClubView } from './components/SummerClubView.tsx';
 import { PromotionsView } from './components/PromotionsView.tsx';
 import { AuthModal } from './components/AuthModal.tsx';
+import { ConsentBanner } from './components/ConsentBanner.tsx';
+import {
+  variant,
+  track,
+  consent,
+  setConsent,
+  loadClarity,
+  signOut as ptSignOut,
+  member as ptMember,
+  type Variant,
+} from './pt';
+import {
+  findOrCreateMemberByEmail,
+  getActiveLocalMember,
+  getLocalOrder,
+  setActiveLocalMemberId,
+} from './data/localStore.ts';
 
 const STORAGE_CART_KEY = 'bellybelly_cart_v1';
 const STORAGE_TOKEN_KEY = 'bellybelly_token_v1';
 const STORAGE_ACTIVE_ORDER_KEY = 'bellybelly_active_order_id_v1';
 
 export default function App() {
+  const [abVariant] = useState<Variant>(() => variant());
+  const [consentChoice, setConsentChoice] = useState<'granted' | 'denied' | null>(() =>
+    consent()
+  );
+  const didInitPtRef = useRef(false);
+
   const [activeView, setActiveView] = useState<AppView>('menu');
   const [fulfillmentMode, setFulfillmentMode] = useState<FulfillmentMode>('pickup');
   const [activeCategory, setActiveCategory] = useState<MenuCategoryId>('all');
@@ -47,14 +70,35 @@ export default function App() {
       return null;
     }
   });
-  const [member, setMember] = useState<MemberAccount | null>(null);
+  const [member, setMember] = useState<MemberAccount | null>(() => {
+    const local = getActiveLocalMember();
+    if (local) return local;
+    const ptUser = ptMember();
+    return ptUser ? findOrCreateMemberByEmail(ptUser.email, ptUser.id) : null;
+  });
 
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  const [activeOrder, setActiveOrder] = useState<Order | null>(() => {
+    try {
+      const savedOrderId = localStorage.getItem(STORAGE_ACTIVE_ORDER_KEY);
+      return savedOrderId ? getLocalOrder(savedOrderId) : null;
+    } catch {
+      return null;
+    }
+  });
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (didInitPtRef.current) return;
+    didInitPtRef.current = true;
+    if (consent() === 'granted') {
+      loadClarity();
+    }
+    track('screen_view');
+  }, []);
 
   const openAuthModal = useCallback((mode: 'login' | 'register') => {
     setAuthModalMode(mode);
@@ -63,9 +107,6 @@ export default function App() {
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 2600);
   }, []);
 
   // Persist cart
@@ -77,44 +118,11 @@ export default function App() {
     }
   }, [cart]);
 
-  // Restore member session if token exists
-  useEffect(() => {
-    if (!authToken) return;
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${authToken}` },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.member) {
-          setMember(data.member);
-        } else {
-          setAuthToken(null);
-          localStorage.removeItem(STORAGE_TOKEN_KEY);
-        }
-      })
-      .catch(() => {});
-  }, [authToken]);
-
-  // Restore last active order if present
-  useEffect(() => {
-    try {
-      const savedOrderId = localStorage.getItem(STORAGE_ACTIVE_ORDER_KEY);
-      if (!savedOrderId) return;
-      fetch(`/api/orders/${encodeURIComponent(savedOrderId)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data?.order) setActiveOrder(data.order);
-        })
-        .catch(() => {});
-    } catch {
-      // Ignore
-    }
-  }, []);
-
   const handleAuthSuccess = useCallback(
     (loggedInMember: MemberAccount, token: string) => {
       setMember(loggedInMember);
       setAuthToken(token);
+      setActiveLocalMemberId(loggedInMember.id);
       try {
         localStorage.setItem(STORAGE_TOKEN_KEY, token);
       } catch {
@@ -125,13 +133,9 @@ export default function App() {
     [showToast]
   );
 
-  const handleLogout = useCallback(async () => {
-    if (authToken) {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
-      }).catch(() => {});
-    }
+  const handleLogout = useCallback(() => {
+    ptSignOut();
+    setActiveLocalMemberId(null);
     setMember(null);
     setAuthToken(null);
     try {
@@ -140,7 +144,7 @@ export default function App() {
       // Ignore
     }
     showToast('Signed out');
-  }, [authToken, showToast]);
+  }, [showToast]);
 
   const handleAddToCart = useCallback(
     (newItem: CartItem) => {
@@ -322,6 +326,7 @@ export default function App() {
                     onQuickAddUpsell={handleQuickAddItem}
                     member={member}
                     authToken={authToken}
+                    showSignUpOffer={abVariant === 'B'}
                     onOpenSignUp={() => openAuthModal('register')}
                     onAuthSuccess={handleAuthSuccess}
                     onOrderCreated={handleOrderCreated}
@@ -462,6 +467,7 @@ export default function App() {
               onQuickAddUpsell={handleQuickAddItem}
               member={member}
               authToken={authToken}
+              showSignUpOffer={abVariant === 'B'}
               onOpenSignUp={() => openAuthModal('register')}
               onAuthSuccess={handleAuthSuccess}
               onOrderCreated={handleOrderCreated}
@@ -490,7 +496,7 @@ export default function App() {
       {toastMessage && (
         <div
           role="status"
-          className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-[#1C1523] text-white text-xs font-medium shadow-lg flex items-center gap-3 whitespace-nowrap"
+          className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2.5 rounded-xl bg-[#1C1523] text-white text-xs font-medium shadow-lg flex items-center gap-3 whitespace-nowrap"
         >
           <span>{toastMessage}</span>
           <button
@@ -502,6 +508,19 @@ export default function App() {
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
+      )}
+
+      {consentChoice === null && (
+        <ConsentBanner
+          onAccept={() => {
+            setConsent('granted');
+            setConsentChoice('granted');
+          }}
+          onDecline={() => {
+            setConsent('denied');
+            setConsentChoice('denied');
+          }}
+        />
       )}
     </div>
   );

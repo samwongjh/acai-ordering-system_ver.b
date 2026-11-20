@@ -54,3 +54,6 @@ A chronological record of the prompts used to build and iterate on the **BellyBe
 </script>
 ```
 
+24. Put the code I paste below into the file `src/pt.ts`, next to `src/App.tsx`, exactly as written. Keep `SUPABASE_URL` and `SUPABASE_KEY` in `src/pt.ts` as they are. Keep the app front-end only, with no server, `server.ts`, Express, Gemini calls or secrets. Make the app show version A or B using `variant()`, `track("screen_view")`, `track("cta_click")` on `Join now`, `track("goal_complete")`, bottom consent notice with `Accept`/`Decline`, and `loadClarity()` after consent (removing Clarity from `index.html`).
+25. Pasted `src/pt.ts` implementation (Supabase publishable client, `variant()`, `track()`, `consent()`, `setConsent()`, `loadClarity()`, and Supabase Auth helpers).
+26. commit all changes to github and collate all prompts under `prompts.md` filename

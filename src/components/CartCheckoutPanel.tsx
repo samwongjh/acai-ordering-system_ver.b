@@ -29,6 +29,13 @@ import type {
 } from '../types.ts';
 import { OUTLET_INFO } from '../data/menuData.ts';
 import { FoodImage } from './FoodImage.tsx';
+import { signIn as ptSignIn, signUp as ptSignUp, track } from '../pt.ts';
+import {
+  createLocalOrder,
+  findOrCreateMemberByEmail,
+  loginDemoMember,
+  upsertMemberProfile,
+} from '../data/localStore.ts';
 
 type CheckoutStep = 'cart' | 'identity' | 'payment';
 
@@ -43,6 +50,7 @@ interface CartCheckoutPanelProps {
   onQuickAddUpsell: (item: MenuItem) => void;
   member: MemberAccount | null;
   authToken: string | null;
+  showSignUpOffer: boolean;
   onOpenSignUp: () => void;
   onAuthSuccess: (member: MemberAccount, token: string) => void;
   onOrderCreated: (order: Order, updatedMember: MemberAccount | null) => void;
@@ -58,7 +66,8 @@ export function CartCheckoutPanel({
   upsellItems,
   onQuickAddUpsell,
   member,
-  authToken,
+  authToken: _authToken,
+  showSignUpOffer,
   onOpenSignUp,
   onAuthSuccess,
   onOrderCreated,
@@ -194,24 +203,11 @@ export function CartCheckoutPanel({
     setCheckoutIdentityMode('member');
   };
 
-  const handleDemoMemberLogin = async () => {
-    setAuthLoading(true);
+  const handleDemoMemberLogin = () => {
     setAuthError('');
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ demo: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Demo sign-in failed');
-      onAuthSuccess(data.member, data.token);
-      syncMemberFields(data.member);
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Unable to sign in');
-    } finally {
-      setAuthLoading(false);
-    }
+    const demoMember = loginDemoMember();
+    onAuthSuccess(demoMember, 'local_demo');
+    syncMemberFields(demoMember);
   };
 
   const handleMemberAuthSubmit = async (e: FormEvent) => {
@@ -219,20 +215,33 @@ export function CartCheckoutPanel({
     setAuthLoading(true);
     setAuthError('');
     try {
-      const endpoint = authTab === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const payload =
-        authTab === 'login'
-          ? { identifier: loginIdentifier, password: loginPassword }
-          : { name: regName, email: regEmail, phone: regPhone, password: regPassword };
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
-      onAuthSuccess(data.member, data.token);
-      syncMemberFields(data.member);
+      if (authTab === 'login') {
+        const cleanId = loginIdentifier.trim();
+        if (
+          cleanId.toLowerCase() === 'tessa.tan@bellytribe.sg' ||
+          cleanId.replace(/\s+/g, '') === '+6591234567'
+        ) {
+          const demoMember = loginDemoMember();
+          onAuthSuccess(demoMember, 'local_demo');
+          syncMemberFields(demoMember);
+          return;
+        }
+        const user = await ptSignIn(cleanId, loginPassword);
+        const profile = findOrCreateMemberByEmail(user.email, user.id);
+        onAuthSuccess(profile, user.id);
+        syncMemberFields(profile);
+      } else {
+        const user = await ptSignUp(regEmail.trim(), regPassword);
+        const profile = upsertMemberProfile({
+          id: user.id,
+          name: regName.trim(),
+          email: user.email,
+          phone: regPhone.trim(),
+        });
+        track('goal_complete', { source: 'checkout_inline_register' });
+        onAuthSuccess(profile, user.id);
+        syncMemberFields(profile);
+      }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Authentication error');
     } finally {
@@ -262,7 +271,7 @@ export function CartCheckoutPanel({
     setStep('payment');
   };
 
-  const handlePlaceOrder = async () => {
+  const handlePlaceOrder = () => {
     setPlacingOrder(true);
     setSubmitError('');
 
@@ -286,29 +295,20 @@ export function CartCheckoutPanel({
     };
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (useMember && authToken) {
-        headers.Authorization = `Bearer ${authToken}`;
-      }
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          fulfillmentMode,
-          items,
-          customer,
-          paymentMethod,
-          utensilsIncluded,
-          promoCode: appliedPromo,
-          redeemPoints: useMember && redeemPoints,
-        }),
+      const { order, updatedMember } = createLocalOrder({
+        fulfillmentMode,
+        items,
+        customer,
+        paymentMethod,
+        utensilsIncluded,
+        promoCode: appliedPromo,
+        redeemPoints: useMember && redeemPoints,
+        memberId: useMember ? member?.id : undefined,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not place order');
       setStep('cart');
       setAppliedPromo(null);
       setRedeemPoints(false);
-      onOrderCreated(data.order, data.updatedMember || null);
+      onOrderCreated(order, updatedMember);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Checkout failed. Please try again.');
     } finally {
@@ -1009,7 +1009,7 @@ export function CartCheckoutPanel({
 
             {step === 'cart' && (
               <div className="space-y-2.5">
-                {!member && (
+                {showSignUpOffer && !member && (
                   <div className="relative">
                     <div
                       aria-hidden="true"
@@ -1017,7 +1017,10 @@ export function CartCheckoutPanel({
                     />
                     <motion.button
                       type="button"
-                      onClick={onOpenSignUp}
+                      onClick={() => {
+                        track('cta_click', { location: 'cart_footer' });
+                        onOpenSignUp();
+                      }}
                       whileHover={{ y: -1.5, scale: 1.008 }}
                       whileTap={{ scale: 0.985 }}
                       transition={{ type: 'spring', stiffness: 420, damping: 28 }}
@@ -1040,7 +1043,7 @@ export function CartCheckoutPanel({
                           <div className="min-w-0">
                             <div className="flex items-center gap-1">
                               <span className="font-display text-sm font-bold tracking-tight text-white truncate">
-                                Sign Up to Belly Tribe
+                                Join now
                               </span>
                               <ChevronRight
                                 className="w-3.5 h-3.5 text-white/80 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
@@ -1048,7 +1051,7 @@ export function CartCheckoutPanel({
                               />
                             </div>
                             <p className="text-[11px] text-purple-100/90 truncate">
-                              150 welcome pts + 10% back
+                              Belly Tribe · 150 welcome pts + 10% back
                             </p>
                           </div>
                         </div>

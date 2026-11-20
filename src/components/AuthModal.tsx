@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Sparkles, X } from 'lucide-react';
 import type { MemberAccount } from '../types.ts';
+import { signIn as ptSignIn, signUp as ptSignUp, track } from '../pt.ts';
+import {
+  findOrCreateMemberByEmail,
+  loginDemoMember,
+  upsertMemberProfile,
+} from '../data/localStore.ts';
 
 interface AuthModalProps {
   open: boolean;
@@ -33,24 +39,11 @@ export function AuthModal({
 
   if (!open) return null;
 
-  const handleDemo = async () => {
-    setLoading(true);
+  const handleDemo = () => {
     setError('');
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ demo: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Login failed');
-      onAuthSuccess(data.member, data.token);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to sign in');
-    } finally {
-      setLoading(false);
-    }
+    const demoMember = loginDemoMember();
+    onAuthSuccess(demoMember, 'local_demo');
+    onClose();
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -58,20 +51,33 @@ export function AuthModal({
     setLoading(true);
     setError('');
     try {
-      const url = tab === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const body =
-        tab === 'login'
-          ? { identifier, password }
-          : { name, email, phone, password };
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication error');
-      onAuthSuccess(data.member, data.token);
-      onClose();
+      if (tab === 'login') {
+        const cleanId = identifier.trim();
+        if (
+          cleanId.toLowerCase() === 'tessa.tan@bellytribe.sg' ||
+          cleanId.replace(/\s+/g, '') === '+6591234567'
+        ) {
+          const demoMember = loginDemoMember();
+          onAuthSuccess(demoMember, 'local_demo');
+          onClose();
+          return;
+        }
+        const user = await ptSignIn(cleanId, password);
+        const profile = findOrCreateMemberByEmail(user.email, user.id);
+        onAuthSuccess(profile, user.id);
+        onClose();
+      } else {
+        const user = await ptSignUp(email.trim(), password);
+        const profile = upsertMemberProfile({
+          id: user.id,
+          name: name.trim(),
+          email: user.email,
+          phone: phone.trim(),
+        });
+        track('goal_complete', { source: 'auth_modal_register' });
+        onAuthSuccess(profile, user.id);
+        onClose();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication error');
     } finally {
@@ -176,11 +182,11 @@ export function AuthModal({
           )}
           {tab === 'login' && (
             <input
-              type="text"
+              type="email"
               required
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="Email or Mobile"
+              placeholder="Email address"
               className="w-full h-11 px-3.5 rounded-xl border border-[#1C1523]/12 text-sm focus:outline-none focus:border-[#5B2378]"
             />
           )}

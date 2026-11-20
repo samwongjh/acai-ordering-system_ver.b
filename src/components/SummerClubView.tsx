@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { MemberAccount, Order } from '../types.ts';
 import { LegendMascot, RecruitMascot, WarriorMascot } from './BellyMascots.tsx';
+import { getMemberOrderHistory } from '../data/localStore.ts';
 
 interface SummerClubViewProps {
   member: MemberAccount | null;
@@ -153,32 +154,14 @@ export function SummerClubView({
   onReorder,
 }: SummerClubViewProps) {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingOrders] = useState(false);
 
   useEffect(() => {
     if (!member || !authToken) {
       setOrders([]);
       return;
     }
-    let cancelled = false;
-    setLoadingOrders(true);
-    fetch('/api/orders/member/history', {
-      headers: { Authorization: `Bearer ${authToken}` },
-    })
-      .then((res) => (res.ok ? res.json() : { orders: [] }))
-      .then((data) => {
-        if (!cancelled) setOrders(data.orders || []);
-      })
-      .catch(() => {
-        if (!cancelled) setOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingOrders(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    setOrders(getMemberOrderHistory(member.id));
   }, [member, authToken]);
 
   if (!member) {
