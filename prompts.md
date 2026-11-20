@@ -34,3 +34,23 @@ A chronological record of the prompts used to build and iterate on the **BellyBe
     })(window, document, "clarity", "script", "zgi74gt88t");
 </script>
 ```
+
+16. load the github commit id 97157fd9465b20b2f3b1e0a06794312656b3c81e and display the mobile app design. improve this option to include absolute value of the savings together with the % savings and make it animated and more prominent than the Proceed to Pay option *(with screenshot attachment)*
+17. git push to `https://github.com/samwongjh/acai-ordering-system_ver.b.git` *(token redacted)*
+18. load the github repository: `https://github.com/samwongjh/acai-ordering-system_ver.a.git` and display the user interface
+19. improve this option to make it animated and more prominent. include the absolute value savings together with the % savings. *(with screenshot attachment)*
+20. git push to `https://github.com/samwongjh/acai-ordering-system_ver.b.git` *(token redacted)*
+21. make adjustments to the Proceed to Pay button based on the attached screenshot *(with screenshot attachment)*
+22. include the colour for the Proceed to Pay instead of keeping it white
+23. embed Microsoft Clarity in the website with the following code, collate all prompts under `prompts.md` filename and commit changes to github:
+
+```html
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "zgieynu4p6");
+</script>
+```
+

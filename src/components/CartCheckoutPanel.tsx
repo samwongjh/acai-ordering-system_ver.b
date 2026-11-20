@@ -1081,14 +1081,12 @@ export function CartCheckoutPanel({
                 <button
                   type="button"
                   onClick={() => setStep('identity')}
-                  className={
-                    !member
-                      ? 'w-full h-11 rounded-xl border border-[#1C1523]/15 bg-[#FAF9F7] hover:bg-[#F3EFEA] text-[#1C1523] font-medium text-xs flex items-center justify-between px-4 transition-colors cursor-pointer'
-                      : 'w-full h-12 rounded-xl bg-[#1C1523] hover:bg-[#5B2378] text-white font-semibold text-sm flex items-center justify-between px-4 transition-colors cursor-pointer'
-                  }
+                  className="w-full h-12 rounded-2xl bg-[#1C1523] hover:bg-[#2F243A] text-white font-semibold text-sm flex items-center justify-between px-4 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1C1523]"
                 >
                   <span>Proceed to Pay</span>
-                  <span className="font-mono tabular-nums">S${grandTotal.toFixed(2)}</span>
+                  <span className="font-mono font-semibold tabular-nums">
+                    S${grandTotal.toFixed(2)}
+                  </span>
                 </button>
               </div>
             )}
